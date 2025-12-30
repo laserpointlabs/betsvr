@@ -11,7 +11,8 @@ const API_BASE_URL = window.location.hostname === 'bet.laserpointlabs.com'
 const ALERTS_BASE_URL = '';
 
 // Get default model from environment variable (set via Docker env)
-const DEFAULT_MODEL = window.DEFAULT_MODEL || 'gpt-4o';
+// Default to a local/provider-independent model so the UI works even if OpenAI isn't configured.
+const DEFAULT_MODEL = window.DEFAULT_MODEL || 'granite4:3b';
 
 // Allowed models - exact matches only
 // Note: gpt-4o is the premium model with best reasoning

@@ -39,7 +39,8 @@ services:
     ports:
       - "8004:80" # Optional: local testing (avoid collision with lmsvr's bet_frontend)
     environment:
-      - DEFAULT_MODEL=${BET_DEFAULT_MODEL:-gpt-4o}
+      # Default to a local/provider-independent model to avoid 500s when OpenAI isn't configured.
+      - DEFAULT_MODEL=${BET_DEFAULT_MODEL:-granite4:3b}
     depends_on:
       - bet_api
     restart: unless-stopped

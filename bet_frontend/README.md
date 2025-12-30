@@ -12,10 +12,10 @@ Simple web-based chat interface for **lmsvr** (LLM/auth provider) plus **betsvr*
 
 ## Configuration
 
-Set the default model via environment variable in your `.env` file:
+Set the default model via environment variable in your `.env` file (recommended default: `granite4:3b`):
 
 ```bash
-BET_DEFAULT_MODEL=llama3.2:1b
+BET_DEFAULT_MODEL=granite4:3b
 ```
 
 Or in `docker-compose.yml`:
