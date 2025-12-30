@@ -1,0 +1,5 @@
+mcp[cli]
+pypdf
+langchain-text-splitters
+chromadb
+sentence-transformers

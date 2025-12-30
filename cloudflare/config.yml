@@ -1,0 +1,18 @@
+# betsvr Cloudflare Tunnel config (separate tunnel from lmsvr)
+#
+# After creating a new tunnel, set:
+# - tunnel: <TUNNEL_ID>
+# - credentials-file: /etc/cloudflared/credentials.json
+#
+# Then route DNS:
+#   cloudflared tunnel route dns betsvr-bet bet.laserpointlabs.com
+
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: bet.laserpointlabs.com
+    service: http://bet_frontend:80
+  - hostname: bet-api.laserpointlabs.com
+    service: http://bet_api:8000
+  - service: http_status:404

@@ -1,0 +1,71 @@
+# Docker Compose for betsvr (betting product)
+#
+# Services:
+# - bet_frontend: static UI (nginx)
+# - bet_api: betting-specific API + monitoring (FastAPI) that validates tokens via lmsvr
+# - cloudflared: Cloudflare Tunnel for bet.laserpointlabs.com
+
+services:
+  bet_api:
+    build:
+      context: ./bet_api
+      dockerfile: Dockerfile
+    container_name: betsvr_bet_api
+    ports:
+      - "8003:8000" # Optional: local testing
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LM_API_BASE_URL=${LM_API_BASE_URL:-https://lmapi.laserpointlabs.com}
+      - ODDS_API_KEY=${ODDS_API_KEY}
+      - ALERT_TTL_MINUTES=${ALERT_TTL_MINUTES:-60}
+      - PROP_CHECK_INTERVAL=${PROP_CHECK_INTERVAL:-15}
+    volumes:
+      # Mount MCP server code read-only; mount data directories as writable volumes.
+      - ./mcp_servers:/mcp_servers:ro
+      - betsvr_betting_monitor_data:/mcp_servers/betting_monitor/data
+      - betsvr_prizepicks_data:/mcp_servers/prizepicks/data
+    restart: unless-stopped
+    extra_hosts:
+      # Allows bet_api container to reach lmsvr running on the host at http://host.docker.internal:8001 (Linux).
+      - "host.docker.internal:host-gateway"
+    networks:
+      - betsvr_network
+
+  bet_frontend:
+    build:
+      context: ./bet_frontend
+      dockerfile: Dockerfile
+    container_name: betsvr_bet_frontend
+    ports:
+      - "8004:80" # Optional: local testing (avoid collision with lmsvr's bet_frontend)
+    environment:
+      - DEFAULT_MODEL=${BET_DEFAULT_MODEL:-gpt-4o}
+    depends_on:
+      - bet_api
+    restart: unless-stopped
+    networks:
+      - betsvr_network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: betsvr_cloudflared
+    command: tunnel --config /etc/cloudflared/config.yml run
+    depends_on:
+      bet_frontend:
+        condition: service_started
+      bet_api:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - betsvr_network
+    volumes:
+      - ./cloudflare/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflare/credentials.json:/etc/cloudflared/credentials.json:ro
+
+volumes:
+  betsvr_betting_monitor_data:
+  betsvr_prizepicks_data:
+
+networks:
+  betsvr_network:
+    driver: bridge

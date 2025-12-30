@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Cloudflared secrets
+cloudflare/credentials.json
+cloudflare/*.json
+
+# Local env
+.env
+.env.*
+
+# MCP runtime data (persisted via docker volumes in prod)
+mcp_servers/**/data/alerts.json
+mcp_servers/**/data/opening_lines.json
+mcp_servers/**/data/opening_props.json
+mcp_servers/**/data/line_history.json
+mcp_servers/**/data/projections.json
