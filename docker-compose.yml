@@ -50,6 +50,7 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: betsvr_cloudflared
     command: tunnel --config /etc/cloudflared/config.yml run
+    user: "0:0"
     depends_on:
       bet_frontend:
         condition: service_started

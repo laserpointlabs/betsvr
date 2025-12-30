@@ -7,12 +7,10 @@
 # Then route DNS:
 #   cloudflared tunnel route dns betsvr-bet bet.laserpointlabs.com
 
-tunnel: REPLACE_WITH_TUNNEL_ID
+tunnel: c1e92e91-ce74-4b5c-9949-783fdfe56670
 credentials-file: /etc/cloudflared/credentials.json
 
 ingress:
   - hostname: bet.laserpointlabs.com
     service: http://bet_frontend:80
-  - hostname: bet-api.laserpointlabs.com
-    service: http://bet_api:8000
   - service: http_status:404
