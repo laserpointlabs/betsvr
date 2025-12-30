@@ -41,6 +41,7 @@ const alertsPanel = document.getElementById('alerts-panel');
 const alertsList = document.getElementById('alerts-list');
 const alertBadge = document.getElementById('alert-badge');
 const refreshAlertsBtn = document.getElementById('refresh-alerts-btn');
+const statusBanner = document.getElementById('status-banner');
 
 // Alerts state
 let lastAlertCount = 0;
@@ -122,6 +123,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (toggleSettingsBtn) {
         toggleSettingsBtn.addEventListener('click', toggleSettings);
     }
+
+    // Fetch server status (unauthenticated) to explain missing props/alerts
+    fetchServerStatus();
 });
 
 // Toggle settings panel visibility
@@ -422,6 +426,55 @@ async function sendMessage() {
     // Clear input
     messageInput.value = '';
 
+    // If user is asking about props, fetch a small snapshot and inject as hidden context
+    // into the chat request (so the assistant can answer with real lines instead of
+    // "I don't have prop data").
+    let propsContext = null;
+    try {
+        const msgLower = message.toLowerCase();
+        const looksLikePropsQuestion =
+            msgLower.includes('prop') ||
+            msgLower.includes('props') ||
+            msgLower.includes('player prop') ||
+            msgLower.includes('player props') ||
+            msgLower.includes('passing yards') ||
+            msgLower.includes('rushing yards') ||
+            msgLower.includes('rebounds') ||
+            msgLower.includes('assists');
+
+        if (looksLikePropsQuestion) {
+            // crude sport inference
+            let sport = 'nfl';
+            if (msgLower.includes('nba')) sport = 'nba';
+            if (msgLower.includes('ncaab') || msgLower.includes('cbb')) sport = 'ncaab';
+            if (msgLower.includes('ncaaf') || msgLower.includes('cfb')) sport = 'ncaaf';
+            if (msgLower.includes('mlb')) sport = 'mlb';
+
+            const resp = await fetch(`/api/props?sport=${encodeURIComponent(sport)}&limit_games=4&limit_props_per_game=25`, {
+                headers: { 'Authorization': `Bearer ${apiKey || deviceToken}` },
+                cache: 'no-store'
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data && data.games && data.games.length > 0) {
+                    const compactLines = [];
+                    compactLines.push(`[LIVE PROPS SNAPSHOT - ${data.sport}] ${data.timestamp || ''}`.trim());
+                    for (const g of data.games) {
+                        compactLines.push(`- ${g.matchup || g.game_id}:`);
+                        const props = (g.props || []).slice(0, 25);
+                        for (const p of props) {
+                            compactLines.push(`  - ${p.player} ${p.market}: ${p.line} (${p.odds})`);
+                        }
+                    }
+                    propsContext = compactLines.join('\n');
+                }
+            }
+        }
+    } catch (e) {
+        // Non-fatal: chat still works without props injection
+        console.log('Props context fetch failed', e);
+    }
+
     try {
         // Create assistant message placeholder with thinking indicator
         const assistantContentDiv = addMessage('assistant', '');
@@ -436,6 +489,20 @@ async function sendMessage() {
             </div>
         `;
 
+        // Build request messages; inject props context as a system message (not stored in history)
+        let requestMessages = conversationHistory;
+        if (propsContext && Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+            requestMessages = conversationHistory.slice();
+            // Insert right before the last user message we just pushed
+            requestMessages.splice(requestMessages.length - 1, 0, {
+                role: 'system',
+                content:
+                    'You have access to a live snapshot of current player props via The Odds API. ' +
+                    'Use it to answer user questions with specific prop lines. If the user asks for a sport not present, say so.\n\n' +
+                    propsContext
+            });
+        }
+
         // Send request
         const response = await fetch(`${API_BASE_URL}/api/chat`, {
             method: 'POST',
@@ -445,7 +512,7 @@ async function sendMessage() {
             },
             body: JSON.stringify({
                 model: currentModel,
-                messages: conversationHistory,
+                messages: requestMessages,
                 stream: true
             })
         });
@@ -523,6 +590,44 @@ async function sendMessage() {
 // ============================================================================
 // ALERTS FUNCTIONALITY
 // ============================================================================
+
+async function fetchServerStatus() {
+    if (!statusBanner) return;
+
+    try {
+        const resp = await fetch(`/api/status`, { cache: 'no-store' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        // Clear banner by default
+        statusBanner.style.display = 'none';
+        statusBanner.textContent = '';
+
+        // If ODDS_API_KEY missing, prop monitoring cannot run
+        if (data && data.odds_api_key_configured === false) {
+            statusBanner.style.display = 'block';
+            statusBanner.innerHTML =
+                `⚠️ Prop bets are currently unavailable because <b>ODDS_API_KEY</b> is not configured on the server. ` +
+                `Line-move alerts may also be limited. (See \`betsvr/README.md\` for setup.)`;
+            return;
+        }
+
+        // If props are available, show a lightweight summary so users can confirm data is flowing
+        const counts = data && data.opening_props_counts_by_sport ? data.opening_props_counts_by_sport : null;
+        if (counts && Object.keys(counts).length > 0) {
+            const parts = Object.entries(counts).slice(0, 3).map(([sport, c]) => {
+                const games = (c && c.games) || 0;
+                const lines = (c && c.prop_lines) || 0;
+                return `${sport}: ${games} games / ${lines} lines`;
+            });
+            statusBanner.style.display = 'block';
+            statusBanner.textContent = `Props loaded ✓ (${parts.join(' • ')}${Object.keys(counts).length > 3 ? ' …' : ''})`;
+        }
+    } catch (e) {
+        // Non-fatal: status banner is just informational
+        console.log('Status fetch failed', e);
+    }
+}
 
 // Toggle alerts panel
 function toggleAlertsPanel() {

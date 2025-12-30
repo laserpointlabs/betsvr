@@ -16,9 +16,11 @@ services:
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LM_API_BASE_URL=${LM_API_BASE_URL:-https://lmapi.laserpointlabs.com}
-      - ODDS_API_KEY=${ODDS_API_KEY}
       - ALERT_TTL_MINUTES=${ALERT_TTL_MINUTES:-60}
       - PROP_CHECK_INTERVAL=${PROP_CHECK_INTERVAL:-15}
+    env_file:
+      # Local-only convenience file (gitignored). Use this to set ODDS_API_KEY, etc.
+      - ./betsvr.local.env
     volumes:
       # Mount MCP server code read-only; mount data directories as writable volumes.
       - ./mcp_servers:/mcp_servers:ro

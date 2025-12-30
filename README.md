@@ -22,10 +22,20 @@ Betting product that uses **lmsvr** as the LLM/auth provider.
 ```bash
 cd betsvr
 export LM_API_BASE_URL=http://host.docker.internal:8001
+export ODDS_API_KEY=your_the_odds_api_key_here
 docker compose up -d --build
 ```
 
 3. Open the UI: `http://localhost:8002`
+
+Tip: see `betsvr.env.example` for a full list of supported environment variables.
+
+## Prop bets / player props data
+
+Prop bet monitoring (player props) comes from **The Odds API** via `mcp_servers/betting_monitor`.
+
+- **Required**: set `ODDS_API_KEY` for the `bet_api` service (docker compose env).
+- **Without it**: the system cannot snapshot/compare props, so you will not see prop-related alerts (e.g. `PROP_MOVE`).
 
 ## Production notes
 

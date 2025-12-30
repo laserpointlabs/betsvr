@@ -688,7 +688,16 @@ async def snapshot_props(sport: str = "americanfootball_nfl", limit_games: int =
         try:
             # 1. Get upcoming games first
             url = f"{BASE_URL}/sports/{sport}/events"
-            resp = await client.get(url, params={"apiKey": API_KEY, "commenceTimeFrom": datetime.now(timezone.utc).isoformat()})
+            # Odds API expects RFC3339 timestamps; use Zulu time (no offset) to avoid 422s.
+            commence_from = (
+                datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z")
+            )
+            resp = await client.get(
+                url, params={"apiKey": API_KEY, "commenceTimeFrom": commence_from}
+            )
 
             if resp.status_code != 200:
                 return f"Error fetching events: {resp.status_code}"

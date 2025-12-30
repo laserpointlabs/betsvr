@@ -4,6 +4,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request, status
@@ -172,10 +173,26 @@ async def monitor_lines_loop() -> None:
                         )
 
                     # 2) Compare to opening
-                    await mcp_manager.execute_tool("compare_to_opening", {"sport": sport})
+                    line_result = await mcp_manager.execute_tool(
+                        "compare_to_opening", {"sport": sport}
+                    )
+                    if isinstance(line_result, str) and (
+                        line_result.startswith("ERROR:")
+                        or line_result.startswith("Error")
+                        or "ODDS_API_KEY not set" in line_result
+                    ):
+                        logger.warning("Line check for %s returned: %s", sport, line_result)
 
                     # 3) Steam detection
-                    await mcp_manager.execute_tool("detect_steam_moves", {"sport": sport})
+                    steam_result = await mcp_manager.execute_tool(
+                        "detect_steam_moves", {"sport": sport}
+                    )
+                    if isinstance(steam_result, str) and (
+                        steam_result.startswith("ERROR:")
+                        or steam_result.startswith("Error")
+                        or "ODDS_API_KEY not set" in steam_result
+                    ):
+                        logger.warning("Steam check for %s returned: %s", sport, steam_result)
 
                     # 4) Props check (interval-gated)
                     if time.time() - last_prop_check > (prop_interval * 60):
@@ -193,7 +210,17 @@ async def monitor_lines_loop() -> None:
 
                         if not has_props:
                             logger.info("Taking props snapshot for %s...", sport)
-                            await mcp_manager.execute_tool("snapshot_props", {"sport": sport})
+                            snap_result = await mcp_manager.execute_tool(
+                                "snapshot_props", {"sport": sport}
+                            )
+                            if isinstance(snap_result, str) and (
+                                snap_result.startswith("ERROR:")
+                                or snap_result.startswith("Error")
+                                or "ODDS_API_KEY not set" in snap_result
+                            ):
+                                logger.warning(
+                                    "Props snapshot for %s returned: %s", sport, snap_result
+                                )
                         else:
                             result = await mcp_manager.execute_tool("compare_props", {"sport": sport})
                             logger.info("Prop check (%s): %s", sport, result)
@@ -234,6 +261,166 @@ async def shutdown_event():
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "bet_api"}
+
+
+def _safe_read_json(path: Path) -> dict:
+    try:
+        if not path.exists():
+            return {}
+        with open(path, "r") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+@app.get("/api/status")
+async def status_public():
+    """
+    Public, unauthenticated status endpoint for the frontend to quickly explain
+    why props/alerts may be empty (e.g., ODDS_API_KEY missing).
+    """
+    alerts_file = Path("/mcp_servers/betting_monitor/data/alerts.json")
+    opening_lines_file = Path("/mcp_servers/betting_monitor/data/opening_lines.json")
+    opening_props_file = Path("/mcp_servers/betting_monitor/data/opening_props.json")
+
+    opening_lines = _safe_read_json(opening_lines_file)
+    opening_props = _safe_read_json(opening_props_file)
+
+    lines_by_sport = {
+        sport: (data.get("timestamp") if isinstance(data, dict) else None)
+        for sport, data in opening_lines.items()
+        if isinstance(opening_lines, dict)
+    }
+    props_by_sport = {
+        sport: (data.get("timestamp") if isinstance(data, dict) else None)
+        for sport, data in opening_props.items()
+        if isinstance(opening_props, dict)
+    }
+
+    props_counts_by_sport = {}
+    if isinstance(opening_props, dict):
+        for sport, sport_data in opening_props.items():
+            if not isinstance(sport_data, dict):
+                continue
+            games = sport_data.get("games", {}) if isinstance(sport_data.get("games", {}), dict) else {}
+            game_count = len(games)
+            prop_lines = 0
+            for _game_id, game_data in games.items():
+                if not isinstance(game_data, dict):
+                    continue
+                props = game_data.get("props", {})
+                if isinstance(props, dict):
+                    prop_lines += len(props)
+            props_counts_by_sport[sport] = {"games": game_count, "prop_lines": prop_lines}
+
+    odds_key_configured = bool(os.getenv("ODDS_API_KEY"))
+
+    return {
+        "status": "ok",
+        "service": "bet_api",
+        "odds_api_key_configured": odds_key_configured,
+        "prop_check_interval_minutes": int(os.getenv("PROP_CHECK_INTERVAL", "15")),
+        "sports_to_monitor": SPORTS_TO_MONITOR,
+        "files": {
+            "alerts_exists": alerts_file.exists(),
+            "opening_lines_exists": opening_lines_file.exists(),
+            "opening_props_exists": opening_props_file.exists(),
+        },
+        "opening_lines_timestamp_by_sport": lines_by_sport,
+        "opening_props_timestamp_by_sport": props_by_sport,
+        "opening_props_counts_by_sport": props_counts_by_sport,
+    }
+
+
+def _parse_sport_alias(sport: str) -> str:
+    """
+    Accept common UI aliases and normalize to The Odds API sport keys used by betting_monitor.
+    """
+    s = (sport or "").strip().lower()
+    if not s:
+        return "americanfootball_nfl"
+    aliases = {
+        "nfl": "americanfootball_nfl",
+        "ncaaf": "americanfootball_ncaaf",
+        "cfb": "americanfootball_ncaaf",
+        "nba": "basketball_nba",
+        "ncaab": "basketball_ncaab",
+        "cbb": "basketball_ncaab",
+        "mlb": "baseball_mlb",
+    }
+    return aliases.get(s, s)
+
+
+@app.get("/api/props")
+async def get_props_snapshot(
+    sport: str = "americanfootball_nfl",
+    limit_games: int = 5,
+    limit_props_per_game: int = 30,
+    refresh: bool = False,
+    _auth: str = Depends(require_valid_token),
+):
+    """
+    Return the current props snapshot (from betting_monitor's opening_props.json).
+    If missing (or refresh=true), take a snapshot first so callers can immediately see data.
+    """
+    sport_key = _parse_sport_alias(sport)
+    opening_props_file = Path("/mcp_servers/betting_monitor/data/opening_props.json")
+
+    def _load_sport_props() -> Optional[Dict[str, Any]]:
+        all_props = _safe_read_json(opening_props_file)
+        if not isinstance(all_props, dict):
+            return None
+        data = all_props.get(sport_key)
+        if isinstance(data, dict):
+            return data
+        return None
+
+    # Ensure tools map exists if we need to snapshot
+    sport_data = _load_sport_props()
+    if refresh or not sport_data:
+        await mcp_manager.get_tools_ollama_format()
+        snap = await mcp_manager.execute_tool("snapshot_props", {"sport": sport_key})
+        sport_data = _load_sport_props()
+        if not sport_data:
+            raise HTTPException(
+                status_code=502,
+                detail={"error": "props_snapshot_failed", "message": str(snap)},
+            )
+
+    games = sport_data.get("games", {})
+    if not isinstance(games, dict):
+        games = {}
+
+    # Format a compact JSON payload for the frontend to inject into chat context
+    out_games: List[Dict[str, Any]] = []
+    for game_id, game_data in list(games.items())[: max(0, int(limit_games))]:
+        if not isinstance(game_data, dict):
+            continue
+        matchup = game_data.get("matchup")
+        props = game_data.get("props", {})
+        if not isinstance(props, dict):
+            props = {}
+
+        out_props = []
+        for _k, p in list(props.items())[: max(0, int(limit_props_per_game))]:
+            if not isinstance(p, dict):
+                continue
+            out_props.append(
+                {
+                    "player": p.get("player"),
+                    "market": p.get("market"),
+                    "line": p.get("line"),
+                    "odds": p.get("odds"),
+                }
+            )
+
+        out_games.append({"game_id": game_id, "matchup": matchup, "props": out_props})
+
+    return {
+        "sport": sport_key,
+        "timestamp": sport_data.get("timestamp"),
+        "games": out_games,
+    }
 
 
 @app.get("/api/alerts")
@@ -278,7 +465,14 @@ async def trigger_alert_check(_auth: str = Depends(require_valid_token)):
 
             try:
                 prop_result = await mcp_manager.execute_tool("compare_props", {"sport": sport})
-                results[f"{sport}_props"] = prop_result
+
+                # If there is no baseline yet, take one immediately (so UI users don't have to wait
+                # for the background loop interval) and report the snapshot result.
+                if isinstance(prop_result, str) and "No baseline props found" in prop_result:
+                    snap = await mcp_manager.execute_tool("snapshot_props", {"sport": sport})
+                    results[f"{sport}_props"] = snap
+                else:
+                    results[f"{sport}_props"] = prop_result
             except Exception:
                 pass
 

@@ -10,6 +10,7 @@ cloudflare/*.json
 # Local env
 .env
 .env.*
+betsvr.local.env
 
 # MCP runtime data (persisted via docker volumes in prod)
 mcp_servers/**/data/alerts.json

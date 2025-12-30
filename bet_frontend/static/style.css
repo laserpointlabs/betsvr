@@ -489,6 +489,22 @@ button {
     transition: all 0.3s ease;
 }
 
+.status-banner{
+  margin: 0.75rem 0.75rem 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  line-height: 1.2rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 184, 0, 0.12);
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.status-banner a{
+  color: rgba(255, 255, 255, 0.95);
+  text-decoration: underline;
+}
+
 .alerts-panel.collapsed {
     max-height: 0;
     padding: 0;
