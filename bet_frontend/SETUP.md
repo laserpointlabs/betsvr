@@ -22,26 +22,27 @@ docker compose build bet_frontend
 docker compose up -d bet_frontend
 ```
 
-### 3. Set Up Cloudflare DNS
+### 3. Set Up Cloudflare Tunnel + DNS (betsvr)
 
-Add DNS record for `bet.laserpointlabs.com`:
+Create a new betsvr-owned tunnel and route `bet.laserpointlabs.com` to it.
 
 **Via Cloudflare Dashboard:**
 1. Go to DNS → Records
 2. Add CNAME record:
    - Name: `bet`
-   - Target: `7a14aef0-282b-4d81-9e3a-817338eef3df.cfargotunnel.com`
+   - Target: `<YOUR_TUNNEL_ID>.cfargotunnel.com`
    - Proxy: Enabled (orange cloud)
 
 **Via CLI:**
 ```bash
-cloudflared tunnel route dns ollama-gateway bet.laserpointlabs.com
+cloudflared tunnel create betsvr-bet
+cloudflared tunnel route dns betsvr-bet bet.laserpointlabs.com
 ```
 
-### 4. Restart Cloudflare Tunnel
+### 4. Start betsvr tunnel (docker)
 
 ```bash
-docker compose restart cloudflared
+docker compose up -d cloudflared
 ```
 
 ### 5. Access
@@ -60,6 +61,7 @@ docker compose build bet_frontend
 docker compose up -d bet_frontend
 
 # Access at http://localhost:8002
+# Access at http://localhost:8004
 ```
 
 ## Verify Setup
@@ -76,7 +78,7 @@ docker compose up -d bet_frontend
 
 3. Test locally:
    ```bash
-   curl http://localhost:8002
+   curl http://localhost:8004
    ```
 
 4. Test via Cloudflare (after DNS setup):

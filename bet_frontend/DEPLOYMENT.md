@@ -10,20 +10,20 @@
 2. **Docker Configuration**
    - Added `bet_frontend` service to `docker-compose.yml`
    - Configured to use `BET_DEFAULT_MODEL` from `.env`
-   - Exposed on port 8002 for local testing
+   - Exposed on port 8004 for local testing (to avoid collision with lmsvr)
 
 3. **Cloudflare Configuration**
-   - Updated `cloudflare/config.yml` to route `bet.laserpointlabs.com` → `bet_frontend:80`
-   - Cloudflare tunnel will automatically route traffic
+   - `betsvr/cloudflare/config.yml` routes `bet.laserpointlabs.com` → `bet_frontend:80`
+   - betsvr uses its **own** Cloudflare tunnel (separate from lmsvr)
 
 4. **Environment Variable**
    - Added `BET_DEFAULT_MODEL=llama3.2:1b` to `.env`
 
 ## 🚀 Next Steps to Deploy
 
-### 1. Set Up DNS Record
+### 1. Set Up Cloudflare Tunnel + DNS
 
-Add DNS record for `bet.laserpointlabs.com`:
+Create a new Cloudflare tunnel for betsvr and route `bet.laserpointlabs.com` to it:
 
 **Option A: Cloudflare Dashboard**
 1. Go to Cloudflare Dashboard → DNS → Records
@@ -31,19 +31,22 @@ Add DNS record for `bet.laserpointlabs.com`:
 3. Configure:
    - Type: `CNAME`
    - Name: `bet`
-   - Target: `7a14aef0-282b-4d81-9e3a-817338eef3df.cfargotunnel.com`
+   - Target: `<YOUR_TUNNEL_ID>.cfargotunnel.com`
    - Proxy status: Proxied (orange cloud)
 4. Save
 
 **Option B: CLI**
 ```bash
-cloudflared tunnel route dns ollama-gateway bet.laserpointlabs.com
+cloudflared tunnel create betsvr-bet
+cloudflared tunnel route dns betsvr-bet bet.laserpointlabs.com
 ```
 
-### 2. Restart Cloudflare Tunnel
+### 2. Start betsvr tunnel
+
+Run with betsvr docker compose (after placing `cloudflare/credentials.json`):
 
 ```bash
-docker compose restart cloudflared
+docker compose up -d cloudflared
 ```
 
 ### 3. Verify Deployment
@@ -56,7 +59,7 @@ docker compose ps
 docker compose logs bet_frontend
 
 # Test locally
-curl http://localhost:8002
+curl http://localhost:8004
 
 # Test via Cloudflare (after DNS propagates, 2-5 minutes)
 curl https://bet.laserpointlabs.com

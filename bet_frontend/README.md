@@ -1,6 +1,6 @@
 # Bet Frontend - Chat Interface
 
-Simple web-based chat interface for the LMSVR API Gateway.
+Simple web-based chat interface for **lmsvr** (LLM/auth provider) plus **betsvr** betting alerts.
 
 ## Features
 
@@ -44,28 +44,26 @@ Access at: `http://localhost:8002`
 docker compose up -d bet_frontend
 ```
 
-Access at: `http://localhost:8002`
+Access at: `http://localhost:8004`
 
-## Cloudflare Setup
+## Cloudflare Setup (betsvr tunnel)
 
-The frontend is configured to be accessible at `bet.laserpointlabs.com` via Cloudflare Tunnel.
+The frontend is configured to be accessible at `bet.laserpointlabs.com` via a **betsvr-owned** Cloudflare Tunnel.
 
 ### DNS Setup
 
-Add DNS record in Cloudflare Dashboard:
-- Type: CNAME
-- Name: `bet`
-- Target: `7a14aef0-282b-4d81-9e3a-817338eef3df.cfargotunnel.com`
-- Proxy: Enabled (orange cloud)
+Create a new tunnel for betsvr and route `bet.laserpointlabs.com` to it.
 
-Or via CLI:
+Example CLI flow:
+
 ```bash
-cloudflared tunnel route dns ollama-gateway bet.laserpointlabs.com
+cloudflared tunnel create betsvr-bet
+cloudflared tunnel route dns betsvr-bet bet.laserpointlabs.com
 ```
 
 ### Cloudflare Config
 
-The `cloudflare/config.yml` is already configured with:
+`betsvr/cloudflare/config.yml` should include:
 ```yaml
 - hostname: bet.laserpointlabs.com
   service: http://bet_frontend:80
@@ -81,8 +79,9 @@ The `cloudflare/config.yml` is already configured with:
 ## Architecture
 
 - **Frontend**: Nginx serving static HTML/CSS/JS
-- **API**: Calls `https://lmapi.laserpointlabs.com/api/chat`
-- **Authentication**: API key passed in Authorization header
+- **LLM API**: Calls `https://lmapi.laserpointlabs.com/api/chat` (lmsvr)
+- **Betting alerts API**: Calls `/api/alerts*` on the same origin (betsvr), reverse-proxied to `bet_api`
+- **Authentication**: API key (or device token) passed in `Authorization: Bearer ...`
 - **Streaming**: Real-time response streaming via Server-Sent Events
 
 ## File Structure
